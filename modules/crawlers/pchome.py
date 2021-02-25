@@ -2,9 +2,11 @@ from modules.libraries import *
 from modules.globals import *
 from modules.utilities import *
 
+logger = getModuleLogger(__name__)
+
 def crawler_on_pchome(prod_list, ws, color, threeC):
     """搜尋並爬取 pchome 上的商品。使用 requests。"""
-    logging.info('Crawl on PChome')
+    logger.info('Crawl on PChome')
 
     print('*' * 15 + ' PChome ' + '*' * 15)
     result_for_write = []
@@ -18,7 +20,7 @@ def crawler_on_pchome(prod_list, ws, color, threeC):
         for prod in prod_list:
             j += 1
             ws['a1'].value = 'PChome：{0}/{1}'.format(j, len(prod_list))
-            logging.info('搜尋商品：%s' % re.sub('___', ' ', prod))
+            logger.info('搜尋商品：%s' % re.sub('___', ' ', prod))
             print('搜尋商品：{}\n'.format(re.sub('___', ' ', prod)))
             # result[prod]['PChome'] = {}
             names = []
@@ -83,8 +85,8 @@ def crawler_on_pchome(prod_list, ws, color, threeC):
             # --- 嘗試當個有禮貌的爬蟲 ---
             time.sleep(random.randint(1, 10) * 0.01)
 
-    except:
-        logging.exception('Error occour when crawling PChome!')
+    except Exception:
+        logger.exception('Error occour when crawling PChome!')
 
     finally:
         ws['m3'].value = result_for_write

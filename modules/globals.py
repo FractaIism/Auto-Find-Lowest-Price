@@ -4,6 +4,9 @@ import random
 # - - - 如果一直用同一個User Agent去請求網站回應的話，有可能會被鎖IP，所以這邊先列出一系列隨機的備用 UserAgent - - -
 # 可新增。至 https://www.toolnb.com/tools-lang-zh-TW/createuseragent.html 獲取隨機 User Agent
 
+# "如果沒有放 Cookie 的話每次 request 資料會需要 sleep 5 秒，不然就會被鎖IP。而Cookie 中的 GoogleBot 是我隨意寫的，實際上可以自己填資料。"
+# https://tlyu0419.github.io/2020/06/13/Crawler-PChome/
+
 UserAgents = [
     'Mozilla/5.0 (Macintosh; PPC Mac OS X 10_10_9 rv:2.0; he-IL) AppleWebKit/533.12.3 (KHTML, like Gecko) Version/5.0 Safari/533.12.3',
     'Mozilla/5.0 (iPad; CPU iPad OS 5_1_1 like Mac OS X) AppleWebKit/531.0 (KHTML, like Gecko) CriOS/22.0.834.0 Mobile/87E842 Safari/531.0',
@@ -19,3 +22,5 @@ headers = {
     # - - 使用隨機的 User-Agent - - -
     "User-Agent": UserAgents[(random.randint(0, len(UserAgents)-1))]
 }
+
+xlsm_filename = '自動查最低價.xlsm'

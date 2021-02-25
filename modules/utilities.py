@@ -1,66 +1,74 @@
 from modules.libraries import *
 from modules.globals import *
 
-def getProdList():
-    try:  # Mac
-        wb = load_workbook(os.path.split(os.path.realpath(__file__))[0] + '/自動查最低價.xlsm')
-    except:  # windows
-        wb = load_workbook('自動查最低價.xlsm')
+def getProdList(ws: xw.Sheet):
+    """讀取 Excel 檔取得商品名單"""
+    ### Old code, uses openpyxl.load_workbook, which is not necessary since we can just pass in the xlwings worksheet as a parameter
+    # try:  # Mac
+    #     wb = load_workbook(os.path.split(os.path.realpath(__file__))[0] + '/' + xlsm_filename)
+    # except Exception:  # windows
+    #     wb = load_workbook(xlsm_filename)
+    # ws = wb.active
+    # return [cell.value for cell in list(ws.columns)[1][2:] if not cell.value == None]
 
-    ws = wb.active
-    '''讀取 Excel 檔取得商品名單'''
-    return [cell.value for cell in list(ws.columns)[1][2:] if not cell.value == None]
+    ### Here starts new code
+    firstCell = ws.range('B3')
+    lastCell = ws.range('B:B').end('down')  # finds last used cell in column B
+    prodRange = ws.range(firstCell, lastCell)
+    return prodRange.value
 
 def is_same_prod(prod, found, color, threeC):
-    '''判斷兩個品名是否為同一商品。\n
-    ＊不去特別分辨 試用品 或 非試用品'''
-    logging.info('-----------------------\n比對：\n%s\n%s', prod, found)
+    """判斷兩個品名是否為同一商品。\n
+    ＊不去特別分辨 試用品 或 非試用品"""
+    logging.info('-----------------------\n比對：\n> %s\n> %s', prod, found)
+
+    # 用於3C產品比較
+    ___exist = True if ('___' in prod) else False
 
     # 兩品名皆轉換為小寫： 排除大小寫差異
-    prod = removeComment(prod).lower()
-    found = removeComment(found).lower()
-
-    ___exist = False  # default. It will be True if there is '___' in prod
-    if '___' in prod:
-        ___exist = True
-
+    prod = removePropaganda(prod).lower()
+    found = removePropaganda(found).lower()
     # 移除標點符號
     prod = removePunc(prod)
     found = removePunc(found)
+    # remove spaces (resulting from previous operations)
+    prod = removeSpaces(prod)
+    found = removeSpaces(found)
+    prod_bare = re.sub('___', '', prod)
 
     # 遇到需要比較相似度的地方，我會用 re.sub('___','',prod) 來移除 prod 中的 '___'
-    if SequenceMatcher(None, re.sub('___', '', prod), found).quick_ratio() == 1:
-        logging.info('OOO: %s \n 和\n%s 吻合！', re.sub('___', '', prod), found)
+    if SequenceMatcher(None, prod_bare, found).quick_ratio() == 1:
+        logging.info('OOO: %s \n 和\n%s 吻合！', prod_bare, found)
         return True
 
-    elif SequenceMatcher(None, re.sub('___', '', prod), found).quick_ratio() > 0.76:
+    elif SequenceMatcher(None, prod_bare, found).quick_ratio() > 0.76:
         logging.info('找到相似度超過 0.76 的商品')
         logging.info('第一階段商品名處理：小寫化、移除標點符號、移除宣傳語')
         logging.info('prod=%s', prod)
         logging.info('found=%s', found)
 
-        # 檢查「指定規格」是否一致
-        for word in color:  # set color 的內容由使用者指定 (boom_data.xlsx)
-            if word in prod and word not in found:
-                logging.info('XXX: 指定檢查的規格不一致')
-                print('指定檢查的規格不一致\n')
+        # 檢查「指定規格」是否一致，若非則淘汰
+        for word in color:  # set color 的內容由使用者指定 (自動查最低價.xlsx A14)
+            if (word in prod) and (word not in found):
+                logging.info('XXX: 指定檢查的規格不一致(目標商品無"%s"規格)', word)
+                # print('指定檢查的規格不一致\n')
                 return False
 
         # 如果商品是 3C ，用另外的特殊函式去判斷是否為相同商品 (目標是所有 3C 都在這邊處理)
         for brand in threeC:
             if brand.lower() in prod:
                 logging.info('商品和 3C 有關，套用 3C 專用規格比較法')
-                return is_same_specifi(prod, found, ___exist = ___exist)
+                return is_same_3C(prod, found, ___exist = ___exist)
 
         # 特別處理：split 後前兩個字串都不是中文 （防：英文字太多，會使中文字串的兩三字間的差異（規格）被忽略）
         # 我承認這裡怪怪的，應該可以改得更有效率
         if not is_chinese(prod.split()[0]) and len(prod.split()) > 1 and not is_chinese(prod.split()[1]):
-            if SequenceMatcher(None, removeNoChinese(re.sub('___', '', prod)), removeNoChinese(found)).quick_ratio() > 0.75:
+            if SequenceMatcher(None, removeNoChinese(prod_bare), removeNoChinese(found)).quick_ratio() > 0.75:
                 s1 = ''
                 s2 = ''
 
                 # 抽掉它們不是中文的部分，重新比較
-                for c in removeNoChinese(re.sub('___', '', prod)).split():
+                for c in removeNoChinese(prod_bare).split():
                     s1 += c
 
                 for c in removeNoChinese(found).split():
@@ -86,20 +94,21 @@ def is_same_prod(prod, found, color, threeC):
     # 對應：拿掉品名中的所有英文，重比相似度
     # 20201123 筆：Error 百出，3.4 版中直接拿掉了這一塊
     # 20201112 筆: 這個部分常常誤殺第一段子字串並非英文的正確搜尋結果，要修改（參照隔壁的 jupyter note)
-    elif SequenceMatcher(None, re.sub('___', '', prod), found).quick_ratio() > 0.5 and (
-            (len(prod.split()) > 1 and prod.split()[0].isalpha() and not is_chinese(prod.split()[0])) or (
-            len(found.split()) > 1 and found.split()[0].isalpha() and not is_chinese(found.split()[0]))):
+    elif SequenceMatcher(None, prod_bare, found).quick_ratio() > 0.5 and (
+            (len(prod.split()) > 1 and prod.split()[0].isalpha() and not is_chinese(prod.split()[0])) or (len(found.split()) > 1 and found.split()[0].isalpha() and not is_chinese(found.split()[0]))):
         logging.info('其中一方品名.split() 的第一段子字串不是中文，拿掉重新比較')
         logging.info('prod=%s', prod)
         logging.info('found=%s', found)
         logging.info('相似度大於 0.5 ，取走品名開頭非中文字串，再重新比較一次')
 
         if not is_chinese(prod.split()[0]):
-            return is_same_prod(prod[prod.index(' ') + 1:], found, color)
+            try:
+                return is_same_prod(prod[prod.index(' ') + 1:], found, color, threeC)
+            except ValueError:
+                print(prod)
 
         else:
-            return is_same_prod(prod, found[found.index(' ') + 1:], color)
-
+            return is_same_prod(prod, found[found.index(' ') + 1:], color, threeC)
 
     # 有的時候查到的相符品名的末尾會被賣家硬塞很多關鍵字，無法通過相似度測驗
     elif len(found.split()) > 3 * len(prod.split()):
@@ -179,40 +188,29 @@ def is_same_prod(prod, found, color, threeC):
             logging.info('XXX: 正則表達式檢查未通過\nnumIn=%s\nnumFoun=%s', numIn, numFoun)
             return False
 
-def removeComment(astr):
-    '''用正則表達式移除對搜尋沒太大幫助的宣傳語、註記'''
+def removePropaganda(prod_name):
+    """用正則表達式移除對搜尋沒太大幫助的宣傳語、註記"""
 
     # unicode編碼參考： https://zh.wikipedia.org/wiki/Unicode%E5%AD%97%E7%AC%A6%E5%88%97%E8%A1%A8#%E5%9F%BA%E6%9C%AC%E6%8B%89%E4%B8%81%E5%AD%97%E6%AF%8D
-    newstr_list = re.sub(
-        r'[\[【(「（][^（「\[【(]*(新品上市|任選|效期|專案|與.+相容|免運|折後|限定|獨家\d+折|福利品|現折|限時|安裝|適用|點數[加倍]*回饋|[缺出現司櫃]貨|結帳|促銷)[^\]【）(」]*[\]】）)」]|[(]([^/ ]+/ *){1,}[^/]+[)]|效期[\W]*\d+[./]\d+[./]*\d*|\d(選|色擇)\d|.(折後.+元.|[一二兩三四五六七八九十]+色|([黑紅藍綠橙黃紫黑白金銀]/)+.|\w選\w色|只要.+起)|[^\u0020-\u0204\u4e00-\u9fa5]|[缺出現司櫃]貨[中]*|[^ ]*安裝[^ ]*|下架|[^ ]*配送',
-        ' ', astr, 6).split()
+    print(prod_name)
+    # replace propaganda with spaces
+    new_prod_name = re.sub(
+            r'[\[【(「（][^（「\[【(]*(新品上市|任選|效期|專案|與.+相容|免運|折後|限定|獨家\d+折|福利品|現折|限時|安裝|適用|點數[加倍]*回饋|[缺出現司櫃]貨|結帳|促銷)[^\]【）(」]*[\]】）)」]|[(]([^/ ]+/ *){1,}[^/]+[)]|效期[\W]*\d+[./]\d+[./]*\d*|\d(選|色擇)\d|.('
+            r'折後.+元.|[一二兩三四五六七八九十]+色|([黑紅藍綠橙黃紫黑白金銀]/)+.|\w選\w色|只要.+起)|[^\u0020-\u0204\u4e00-\u9fa5]|[缺出現司櫃]貨[中]*|[^ ]*安裝[^ ]*|下架|[^ ]*配送', ' ', prod_name, 6)
+    return new_prod_name
 
-    newstr = ''
-    # 去除頭尾空白字元
-    for word in newstr_list:
-        newstr += word + ' '
-
-    return newstr[:-1]
-
-    # 去除頭尾空白字元
-    for word in newstr_list:
-        newstr += word + ' '
-
-    return newstr[:-1]
-
-def is_same_specifi(prod1, prod2, ___exist = False):
-    '''判斷規格是否一致，和 is_same_prod 中的判斷法不同的是，數字出現的順序不必要一樣\n
-    ___exist: flag; True: 使用者 有 使用'___'替代任意數字，反之為 False\n
-    '''
+def is_same_3C(prod1, prod2, ___exist = False):
+    """判斷3C產品規格是否一致，和 is_same_prod 中的判斷法不同的是，數字出現的順序不必要一樣\n
+    ___exist: bool; 代表使用者是否有使用'___'替代任意數字"""
 
     # iPad 篩選區： # 未完成
     if 'ipad' in prod1:
         # 判斷點1: iPad+數字 (ex: iPad7)
-        if re.search('ipad *\d+', prod1) and re.search('ipad *\d+', prod1).group(0) in prod2:
+        if re.search(r'ipad *\d+', prod1) and re.search(r'ipad *\d+', prod1).group(0) in prod2:
             pass
 
         # 判斷點2： 年份 (ex: 2019)
-        elif re.search('20\d\d', prod1) and re.search('20\d\d', prod1).group(0) in prod2:
+        elif re.search(r'20\d\d', prod1) and re.search(r'20\d\d', prod1).group(0) in prod2:
             pass
 
         # 若有發現其他判斷點，則以 elif 繼續新增
@@ -235,13 +233,12 @@ def is_same_specifi(prod1, prod2, ___exist = False):
     return SequenceMatcher(None, prod1_remove_allEng, prod2_remove_allEng).quick_ratio() == 1
 
 def is_chinese(ustr):
-    '''判斷一個字串是否全為中文字。 ＊只接受字串，不要亂丟int或其他什麼進來＊'''
+    """判斷一個字串是否全為中文字。 ＊只接受字串，不要亂丟int或其他什麼進來＊"""
     # 註：此處的中文字理論上包含所有繁體與簡體字
     # 只要字串包含以下任何一種，就會回傳 False ：全形標點符號、空白字元、英文、數字
     for uchar in ustr:
-        if not (uchar >= u'\u4e00' and uchar <= u'\u9fa5'):
+        if not (u'\u4e00' <= uchar <= u'\u9fa5'):
             return False
-
     return True
 
 def removeNoChinese(astr):
@@ -265,14 +262,13 @@ def removeChinese(astr):
     return new_str
 
 def removePunc(astr):
-    '''移除對商品名稱而言多餘（拿掉也不應該影響搜尋）的標點符號'''
+    """移除對商品名稱而言多餘（拿掉也不應該影響搜尋）的標點符號"""
     result = ''
     strl = list(astr)
 
     # 不用拿掉 + * \' .
     while set(strl).intersection(
-            {'》', '《', '「', '」', '【', '】', '!', '"', '#', '$', '%', '&', "'", '(', ')', ',', '-', '/', ':', ';', '<', '=', '>', '?', '@', '[', '\\',
-             ']', '^', '`', '{', '|', '}', '~'}) != set():
+            {'》', '《', '「', '」', '【', '】', '!', '"', '#', '$', '%', '&', "'", '(', ')', ',', '-', '/', ':', ';', '<', '=', '>', '?', '@', '[', '\\', ']', '^', '`', '{', '|', '}', '~'}) != set():
         i = 0
         for c in strl:
             if c in '《》!"#$%,;<=>?@\\^`|':  # 把這些符號移除
@@ -291,7 +287,7 @@ def removePunc(astr):
     return result
 
 def only_leave_alnumblank(astr):
-    '''把一個字串中的數字、英文、空白符號以外的字元都移除'''
+    """把一個字串中的數字、英文、空白符號以外的字元都移除"""
     newstr = ''
 
     for c in astr:
@@ -301,7 +297,7 @@ def only_leave_alnumblank(astr):
     return newstr
 
 def removeComma_and_toInt(str_list):
-    '''移除一個由數字字串組成的 list/ str 中的每個字串中的標點符號(',','$','~','～')，並轉換字串為 int type'''
+    """移除一個由數字字串組成的 list/ str 中的每個字串中的標點符號(',','$','~','～')，並轉換字串為 int type"""
     # Last Chnaged: 2020.9.27
 
     # --- 處理傳入的變數並不是 list 類型的狀況 ---
@@ -361,6 +357,13 @@ def removeComma_and_toInt(str_list):
             newlist.append(int(astr))
 
     return newlist
+
+def removeSpaces(mystr):
+    # collapse spaces
+    str1 = re.sub(r' +', ' ', mystr)
+    # strip leading and ending spaces
+    str2 = str1.strip()
+    return str2
 
 # ========= 賣場可賣量抓取/ 價錢比對(isUrlAvailiable) ===========
 def getAmount_PC(urls):
@@ -499,7 +502,7 @@ def getAmount_etmall(urls):
     return amounts
 
 def getStatus_Ymall(urls):
-    '''抓取商品們處於可買或已售完狀態。回傳 list'''
+    """抓取商品們處於可買或已售完狀態。回傳 list"""
     logging.info('Start getStatus_Ymall(urls)')
 
     s = requests.session()
@@ -523,7 +526,7 @@ def getStatus_Ymall(urls):
     return status
 
 def isUrlAvailiable(url, shop, price):
-    '''檢查在 FindPrice 上所查到的商品價格是否正確、店面是否存在'''
+    """檢查在 FindPrice 上所查到的商品價格是否正確、店面是否存在"""
     logging.info('Start isUrlAvailiable(url, shop, price)')
 
     r = requests.get(url, headers = headers)
@@ -557,11 +560,13 @@ def isUrlAvailiable(url, shop, price):
     elif shop == 'Yahoo奇摩購物中心':
         try:
             return removeComma_and_toInt(soup.select_one(
-                '#isoredux-root > div > div.ProductItemPage__pageWrap___2CU8e > div > div:nth-child(1) > div.ProductItemPage__infoSection___3K0FH > div.ProductItemPage__rightInfoWrap___3FNQS > div > div.HeroInfo__heroInfo___1V1O8 > div > div.HeroInfo__leftWrap___3BJHV > div > div').text) == price
+                    '#isoredux-root > div > div.ProductItemPage__pageWrap___2CU8e > div > div:nth-child(1) > div.ProductItemPage__infoSection___3K0FH > div.ProductItemPage__rightInfoWrap___3FNQS > '
+                    'div > div.HeroInfo__heroInfo___1V1O8 > div > div.HeroInfo__leftWrap___3BJHV > div > div').text) == price
         except:
             print(url)
             if soup.select_one(
-                    '#isoredux-root > div > div.ProductItemPage__pageWrap___2CU8e > div > div:nth-child(1) > div.ProductItemPage__infoSection___3K0FH > div.ProductItemPage__rightInfoWrap___3FNQS > div > div.HeroInfo__heroInfo___1V1O8 > div > div.HeroInfo__leftWrap___3BJHV > div > div') == None:
+                    '#isoredux-root > div > div.ProductItemPage__pageWrap___2CU8e > div > div:nth-child(1) > div.ProductItemPage__infoSection___3K0FH > div.ProductItemPage__rightInfoWrap___3FNQS > '
+                    'div > div.HeroInfo__heroInfo___1V1O8 > div > div.HeroInfo__leftWrap___3BJHV > div > div') == None:
                 print('[Yahoo奇摩購物中心] 找不到價格欄\n')
             else:
                 print('[Yahoo奇摩購物中心] 價錢和Find Price 所顯示的不符\n')
@@ -569,8 +574,7 @@ def isUrlAvailiable(url, shop, price):
 
     elif shop == 'myfone購物':
         try:
-            return removeComma_and_toInt(soup.select_one(
-                '#item-419 > div.wrapper > div.section-2 > div.prod-description > div.prod-price > span.prod-sell-price').text) == price
+            return removeComma_and_toInt(soup.select_one('#item-419 > div.wrapper > div.section-2 > div.prod-description > div.prod-price > span.prod-sell-price').text) == price
 
         except:
             print(url)
@@ -598,7 +602,7 @@ def isUrlAvailiable(url, shop, price):
     elif shop == 'ETmall東森購物網':
         try:
             return removeComma_and_toInt(soup.select_one(
-                '#productDetail > div:nth-child(2) > section > section > div:nth-child(3) > div.n-price__block > div.n-price__bottom > span.n-price__exlarge > span.n-price__num').text) == price
+                    '#productDetail > div:nth-child(2) > section > section > div:nth-child(3) > div.n-price__block > div.n-price__bottom > span.n-price__exlarge > span.n-price__num').text) == price
         except:
             print(url)
             if soup.select_one(
@@ -619,13 +623,10 @@ def isUrlAvailiable(url, shop, price):
 
     elif shop == 'friDay購物':
         try:
-            return soup.select_one(
-                '#E3 > div > div > div.prodinfo_area > span > div.bayPricing_area > div.attract_block > span.useCash > span.price_txt').text == str(
-                price)
+            return soup.select_one('#E3 > div > div > div.prodinfo_area > span > div.bayPricing_area > div.attract_block > span.useCash > span.price_txt').text == str(price)
         except:
             print(url)
-            if soup.select_one(
-                    '#E3 > div > div > div.prodinfo_area > span > div.bayPricing_area > div.attract_block > span.useCash > span.price_txt') == None:
+            if soup.select_one('#E3 > div > div > div.prodinfo_area > span > div.bayPricing_area > div.attract_block > span.useCash > span.price_txt') == None:
                 print('[friDay購物] 找不到價格欄\n')
             else:
                 print('[friDay購物] 價錢和Find Price 所顯示的不符\n')
@@ -637,12 +638,10 @@ def isUrlAvailiable(url, shop, price):
         pass
     elif shop == 'momo摩天商城':
         try:
-            return removeComma_and_toInt(soup.select_one(
-                '#goodsForm > div.prdInnerArea > div > div.prdrightwrap > div.prdleftArea > div.prdDetailedArea > dl > dd.sellingPrice > span').text) == price
+            return removeComma_and_toInt(soup.select_one('#goodsForm > div.prdInnerArea > div > div.prdrightwrap > div.prdleftArea > div.prdDetailedArea > dl > dd.sellingPrice > span').text) == price
         except:
             print(url)
-            if soup.select_one(
-                    '#goodsForm > div.prdInnerArea > div > div.prdrightwrap > div.prdleftArea > div.prdDetailedArea > dl > dd.sellingPrice > span') == None:
+            if soup.select_one('#goodsForm > div.prdInnerArea > div > div.prdrightwrap > div.prdleftArea > div.prdDetailedArea > dl > dd.sellingPrice > span') == None:
                 print('[momo摩天商城] 找不到價格欄\n')
             else:
                 print('[momo摩天商城] 價錢和Find Price 所顯示的不符\n')
@@ -665,6 +664,54 @@ def isUrlAvailiable(url, shop, price):
         pass
     elif shop == '淘寶精選':
         pass
+
+def getModuleLogger(name):
+    # set up module-level logger
+    # call with getModuleLogger(__name__)
+    os.chdir(os.path.dirname(__file__))
+    os.chdir('..')
+    if not os.path.exists('logs'):
+        os.mkdir('logs')
+    os.chdir('logs')
+
+    logger = logging.getLogger(f'{name}.log')
+    # name: modules.crawlers.pchome -> pchome
+    name = re.sub(r'.*\.', '', name)
+    logger.addHandler(logging.FileHandler(f'{name}.log', mode = 'w', encoding = 'utf8'))
+    logger.setLevel(logging.DEBUG)
+    return logger
+
+def stashLog_Template(stash: list, msg: str, *args: list[str]):
+    """template to create stashLog functions using functools.partial
+    Note: stashLog is a function to keep logs in order when multithreading"""
+    stash.append(msg)
+    if args:
+        stash.extend(args)
+
+def logNprint_Template(logger: logging.Logger, msg: str, *args: list[str]):
+    """template to create logNprint functions
+    literally 'log and print', two functions in one line
+    Seeing multiple lines with the same message is annoying, and harder to maintain"""
+    print(msg, *args)
+    logger.info(msg, *args)
+
+def disablePrint():
+    """Disable print function
+    Used to measure performance without interference from console IO"""
+
+    def nop(*args, **kwargs):
+        """No operation
+        Can be used to cover up built-in statements like print"""
+
+    global stdout_backup
+    stdout_backup = sys.stdout.write
+    sys.stdout.write = nop
+
+def enablePrint():
+    """Enable print function
+    Re-enable print after performance test finishes"""
+    global stdout_backup
+    sys.stdout.write = stdout_backup
 
 '''def getAmount_FP(urls, shops):
 '''
