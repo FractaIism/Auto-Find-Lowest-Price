@@ -87,18 +87,17 @@ def is_same_prod(prod, found, color, threeC):
     # 20201123 筆：Error 百出，3.4 版中直接拿掉了這一塊
     # 20201112 筆: 這個部分常常誤殺第一段子字串並非英文的正確搜尋結果，要修改（參照隔壁的 jupyter note)
     elif SequenceMatcher(None, re.sub('___', '', prod), found).quick_ratio() > 0.5 and (
-            (len(prod.split()) > 1 and prod.split()[0].isalpha() and not is_chinese(prod.split()[0])) or (
-            len(found.split()) > 1 and found.split()[0].isalpha() and not is_chinese(found.split()[0]))):
+            (len(prod.split()) > 1 and prod.split()[0].isalpha() and not is_chinese(prod.split()[0])) or (len(found.split()) > 1 and found.split()[0].isalpha() and not is_chinese(found.split()[0]))):
         logging.info('其中一方品名.split() 的第一段子字串不是中文，拿掉重新比較')
         logging.info('prod=%s', prod)
         logging.info('found=%s', found)
         logging.info('相似度大於 0.5 ，取走品名開頭非中文字串，再重新比較一次')
 
         if not is_chinese(prod.split()[0]):
-            return is_same_prod(prod[prod.index(' ') + 1:], found, color)
+            return is_same_prod(prod[prod.index(' ') + 1:], found, color, threeC)
 
         else:
-            return is_same_prod(prod, found[found.index(' ') + 1:], color)
+            return is_same_prod(prod, found[found.index(' ') + 1:], color, threeC)
 
 
     # 有的時候查到的相符品名的末尾會被賣家硬塞很多關鍵字，無法通過相似度測驗
@@ -184,8 +183,9 @@ def removeComment(astr):
 
     # unicode編碼參考： https://zh.wikipedia.org/wiki/Unicode%E5%AD%97%E7%AC%A6%E5%88%97%E8%A1%A8#%E5%9F%BA%E6%9C%AC%E6%8B%89%E4%B8%81%E5%AD%97%E6%AF%8D
     newstr_list = re.sub(
-        r'[\[【(「（][^（「\[【(]*(新品上市|任選|效期|專案|與.+相容|免運|折後|限定|獨家\d+折|福利品|現折|限時|安裝|適用|點數[加倍]*回饋|[缺出現司櫃]貨|結帳|促銷)[^\]【）(」]*[\]】）)」]|[(]([^/ ]+/ *){1,}[^/]+[)]|效期[\W]*\d+[./]\d+[./]*\d*|\d(選|色擇)\d|.(折後.+元.|[一二兩三四五六七八九十]+色|([黑紅藍綠橙黃紫黑白金銀]/)+.|\w選\w色|只要.+起)|[^\u0020-\u0204\u4e00-\u9fa5]|[缺出現司櫃]貨[中]*|[^ ]*安裝[^ ]*|下架|[^ ]*配送',
-        ' ', astr, 6).split()
+            r'[\[【(「（][^（「\[【(]*(新品上市|任選|效期|專案|與.+相容|免運|折後|限定|獨家\d+折|福利品|現折|限時|安裝|適用|點數[加倍]*回饋|[缺出現司櫃]貨|結帳|促銷)[^\]【）(」]*[\]】）)」]|[(]([^/ ]+/ *){1,}[^/]+[)]|效期[\W]*\d+[./]\d+[./]*\d*|\d(選|色擇)\d|.('
+            r'折後.+元.|[一二兩三四五六七八九十]+色|([黑紅藍綠橙黃紫黑白金銀]/)+.|\w選\w色|只要.+起)|[^\u0020-\u0204\u4e00-\u9fa5]|[缺出現司櫃]貨[中]*|[^ ]*安裝[^ ]*|下架|[^ ]*配送',
+            ' ', astr, 6).split()
 
     newstr = ''
     # 去除頭尾空白字元
@@ -271,8 +271,7 @@ def removePunc(astr):
 
     # 不用拿掉 + * \' .
     while set(strl).intersection(
-            {'》', '《', '「', '」', '【', '】', '!', '"', '#', '$', '%', '&', "'", '(', ')', ',', '-', '/', ':', ';', '<', '=', '>', '?', '@', '[', '\\',
-             ']', '^', '`', '{', '|', '}', '~'}) != set():
+            {'》', '《', '「', '」', '【', '】', '!', '"', '#', '$', '%', '&', "'", '(', ')', ',', '-', '/', ':', ';', '<', '=', '>', '?', '@', '[', '\\', ']', '^', '`', '{', '|', '}', '~'}) != set():
         i = 0
         for c in strl:
             if c in '《》!"#$%,;<=>?@\\^`|':  # 把這些符號移除
@@ -557,11 +556,13 @@ def isUrlAvailiable(url, shop, price):
     elif shop == 'Yahoo奇摩購物中心':
         try:
             return removeComma_and_toInt(soup.select_one(
-                '#isoredux-root > div > div.ProductItemPage__pageWrap___2CU8e > div > div:nth-child(1) > div.ProductItemPage__infoSection___3K0FH > div.ProductItemPage__rightInfoWrap___3FNQS > div > div.HeroInfo__heroInfo___1V1O8 > div > div.HeroInfo__leftWrap___3BJHV > div > div').text) == price
+                    '#isoredux-root > div > div.ProductItemPage__pageWrap___2CU8e > div > div:nth-child(1) > div.ProductItemPage__infoSection___3K0FH > div.ProductItemPage__rightInfoWrap___3FNQS > '
+                    'div > div.HeroInfo__heroInfo___1V1O8 > div > div.HeroInfo__leftWrap___3BJHV > div > div').text) == price
         except:
             print(url)
             if soup.select_one(
-                    '#isoredux-root > div > div.ProductItemPage__pageWrap___2CU8e > div > div:nth-child(1) > div.ProductItemPage__infoSection___3K0FH > div.ProductItemPage__rightInfoWrap___3FNQS > div > div.HeroInfo__heroInfo___1V1O8 > div > div.HeroInfo__leftWrap___3BJHV > div > div') == None:
+                    '#isoredux-root > div > div.ProductItemPage__pageWrap___2CU8e > div > div:nth-child(1) > div.ProductItemPage__infoSection___3K0FH > div.ProductItemPage__rightInfoWrap___3FNQS > '
+                    'div > div.HeroInfo__heroInfo___1V1O8 > div > div.HeroInfo__leftWrap___3BJHV > div > div') == None:
                 print('[Yahoo奇摩購物中心] 找不到價格欄\n')
             else:
                 print('[Yahoo奇摩購物中心] 價錢和Find Price 所顯示的不符\n')
@@ -569,8 +570,7 @@ def isUrlAvailiable(url, shop, price):
 
     elif shop == 'myfone購物':
         try:
-            return removeComma_and_toInt(soup.select_one(
-                '#item-419 > div.wrapper > div.section-2 > div.prod-description > div.prod-price > span.prod-sell-price').text) == price
+            return removeComma_and_toInt(soup.select_one('#item-419 > div.wrapper > div.section-2 > div.prod-description > div.prod-price > span.prod-sell-price').text) == price
 
         except:
             print(url)
@@ -598,7 +598,7 @@ def isUrlAvailiable(url, shop, price):
     elif shop == 'ETmall東森購物網':
         try:
             return removeComma_and_toInt(soup.select_one(
-                '#productDetail > div:nth-child(2) > section > section > div:nth-child(3) > div.n-price__block > div.n-price__bottom > span.n-price__exlarge > span.n-price__num').text) == price
+                    '#productDetail > div:nth-child(2) > section > section > div:nth-child(3) > div.n-price__block > div.n-price__bottom > span.n-price__exlarge > span.n-price__num').text) == price
         except:
             print(url)
             if soup.select_one(
@@ -619,13 +619,10 @@ def isUrlAvailiable(url, shop, price):
 
     elif shop == 'friDay購物':
         try:
-            return soup.select_one(
-                '#E3 > div > div > div.prodinfo_area > span > div.bayPricing_area > div.attract_block > span.useCash > span.price_txt').text == str(
-                price)
+            return soup.select_one('#E3 > div > div > div.prodinfo_area > span > div.bayPricing_area > div.attract_block > span.useCash > span.price_txt').text == str(price)
         except:
             print(url)
-            if soup.select_one(
-                    '#E3 > div > div > div.prodinfo_area > span > div.bayPricing_area > div.attract_block > span.useCash > span.price_txt') == None:
+            if soup.select_one('#E3 > div > div > div.prodinfo_area > span > div.bayPricing_area > div.attract_block > span.useCash > span.price_txt') == None:
                 print('[friDay購物] 找不到價格欄\n')
             else:
                 print('[friDay購物] 價錢和Find Price 所顯示的不符\n')
@@ -637,12 +634,10 @@ def isUrlAvailiable(url, shop, price):
         pass
     elif shop == 'momo摩天商城':
         try:
-            return removeComma_and_toInt(soup.select_one(
-                '#goodsForm > div.prdInnerArea > div > div.prdrightwrap > div.prdleftArea > div.prdDetailedArea > dl > dd.sellingPrice > span').text) == price
+            return removeComma_and_toInt(soup.select_one('#goodsForm > div.prdInnerArea > div > div.prdrightwrap > div.prdleftArea > div.prdDetailedArea > dl > dd.sellingPrice > span').text) == price
         except:
             print(url)
-            if soup.select_one(
-                    '#goodsForm > div.prdInnerArea > div > div.prdrightwrap > div.prdleftArea > div.prdDetailedArea > dl > dd.sellingPrice > span') == None:
+            if soup.select_one('#goodsForm > div.prdInnerArea > div > div.prdrightwrap > div.prdleftArea > div.prdDetailedArea > dl > dd.sellingPrice > span') == None:
                 print('[momo摩天商城] 找不到價格欄\n')
             else:
                 print('[momo摩天商城] 價錢和Find Price 所顯示的不符\n')
